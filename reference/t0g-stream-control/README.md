@@ -1,0 +1,1 @@
+Original TikTok credential-related sources from Bmat9000/T0G-Stream-Control main (2026-11-12). Files are retained verbatim for provenance. The C++ files are reference code and are not compiled into the standalone Tkinter application. T0G StreamKey's runnable port lives at streamkey/streamlabs.py. See root LICENSE.txt for GPL-3.0 text. No user tokens or stream keys are bundled.
