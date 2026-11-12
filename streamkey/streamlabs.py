@@ -48,6 +48,12 @@ class AccountInfo:
 
 
 @dataclass(frozen=True)
+class TikTokCategory:
+    name: str
+    id: str
+
+
+@dataclass(frozen=True)
 class LiveSession:
     credentials: Credentials = field(repr=False)
     stream_id: str = field(repr=False)
@@ -211,6 +217,36 @@ class StreamlabsTikTok:
             can_go_live=info.get("can_be_live") is True,
         )
 
+    def search_categories(self, game: str) -> list[TikTokCategory]:
+        """Search Streamlabs TikTok categories by name, as Nexus does.
+
+        Never send more than 25 characters: longer terms can be rejected
+        by the Streamlabs Desktop TikTok info endpoint.
+        """
+        game = game.strip()
+        if not game:
+            return []
+        info = self._request("GET", "/tiktok/info", params={"category": game[:25]})
+        raw = info.get("categories") or []
+        if not isinstance(raw, list):
+            raise StreamlabsError("Streamlabs returned an invalid game category list.")
+        categories = []
+        names = set()
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("full_name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            name = name.strip()
+            if name.casefold() in names:
+                continue
+            names.add(name.casefold())
+            categories.append(TikTokCategory(name, str(entry.get("game_mask_id") or "")))
+        if "other" not in names:
+            categories.append(TikTokCategory("Other", ""))
+        return categories
+
     def resolve_category(self, name: str) -> str:
         name = name.strip()
         if not name:
@@ -225,11 +261,15 @@ class StreamlabsTikTok:
         first = categories[0]
         return str(first.get("game_mask_id") or "") if isinstance(first, dict) else ""
 
-    def start_live(self, title: str, category: str = "", mature: bool = False) -> LiveSession:
+    def start_live(
+        self, title: str, category: str = "", mature: bool = False,
+        *, category_id: str | None = None,
+    ) -> LiveSession:
         title = title.strip()
         if not title:
             raise StreamlabsError("Enter a TikTok LIVE title.")
-        category_id = self.resolve_category(category)
+        if category_id is None:
+            category_id = self.resolve_category(category)
         result = self._request("POST", "/tiktok/stream/start", files=[
             ("title", (None, title)),
             ("device_platform", (None, "win32")),
