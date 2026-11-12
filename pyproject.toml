@@ -1,0 +1,6 @@
+[project]
+name = "t0g-streamkey"
+version = "0.1.0"
+description = "Standalone Windows utility for TikTok RTMP credentials"
+requires-python = ">=3.12"
+dependencies = []
