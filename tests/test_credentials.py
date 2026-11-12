@@ -54,9 +54,10 @@ class WindowActionTests(unittest.TestCase):
         self.app.key_display.set.assert_called_with("Not generated")
 
     def test_expired_session_clears_saved_token(self):
+        client = self.app._client
         self.app._invalidate_token()
         self.app.token_store.clear.assert_called_once()
-        self.app._client.disconnect.assert_called_once()
+        client.disconnect.assert_called_once()
         self.assertIsNone(self.app._client)
         self.app.status.set.assert_called_with("Streamlabs session expired")
 
