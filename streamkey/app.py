@@ -1,11 +1,18 @@
 import sys
+import queue
+import threading
 import tkinter as tk
 from tkinter import ttk
 import tomllib
 import webbrowser
 from pathlib import Path
+from tkinter import messagebox
 
 from streamkey.credentials import Credentials
+from streamkey.streamlabs import (
+    StreamlabsError, SessionRejected, StreamlabsTikTok, login_from_web,
+    load_token_from_pc,
+)
 
 STREAMLABS_GUIDE = (
     "https://support.streamlabs.com/hc/en-us/articles/"
@@ -29,11 +36,19 @@ class StreamKeyWindow:
         self.status = tk.StringVar(value="Waiting for credentials")
         self.detail = tk.StringVar(value="Paste the server URL and key issued to your TikTok account.")
         self.version = self.read_version()
+        self._client = None
+        self._stream_id = ""
+        self._busy = False
+        self._events = queue.Queue()
+        self.account_status = tk.StringVar(value="Streamlabs: disconnected")
+        self.live_title = tk.StringVar()
+        self.live_game = tk.StringVar()
+        self.live_mature = tk.BooleanVar(value=False)
 
         root.title("T0G StreamKey")
         root.configure(background=BACKGROUND)
-        root.minsize(660, 480)
-        root.geometry("740x540")
+        root.minsize(720, 680)
+        root.geometry("820x790")
         root.protocol("WM_DELETE_WINDOW", self.close)
         icon = Path(__file__).with_name("streamkey.ico")
         if sys.platform == "win32" and icon.is_file():
@@ -76,6 +91,7 @@ class StreamKeyWindow:
         self.build_settings(settings)
         self.server.trace_add("write", self.on_edit)
         self.key.trace_add("write", self.on_edit)
+        root.after(120, self._process_events)
 
     @staticmethod
     def read_version():
@@ -89,7 +105,7 @@ class StreamKeyWindow:
                   ).grid(row=0, column=0, sticky="w")
         ttk.Button(panel, text="Open Streamlabs guide", command=self.open_guide
                    ).grid(row=0, column=1, columnspan=2, sticky="e")
-        ttk.Label(panel, text="Streamlabs connection unavailable", foreground=MUTED
+        ttk.Label(panel, text="Manual entry or Streamlabs connection", foreground=MUTED
                   ).grid(row=1, column=0, sticky="w", pady=(4, 12))
 
         ttk.Label(panel, text="RTMP server URL").grid(row=2, column=0, sticky="w")
@@ -118,6 +134,43 @@ class StreamKeyWindow:
                   font=("Segoe UI", 11, "bold")).grid(row=8, column=0, columnspan=3, sticky="w")
         ttk.Label(panel, textvariable=self.detail, foreground=MUTED, wraplength=540
                   ).grid(row=9, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ttk.Separator(panel).grid(row=10, column=0, columnspan=3, sticky="ew", pady=12)
+        ttk.Label(panel, text="Get credentials through Streamlabs",
+                  font=("Segoe UI", 13, "bold")).grid(row=11, column=0, columnspan=3, sticky="w")
+        login_row = ttk.Frame(panel)
+        login_row.grid(row=12, column=0, columnspan=3, sticky="w", pady=(8, 4))
+        self.web_button = ttk.Button(login_row, text="Load from Web", command=self.connect_web)
+        self.web_button.pack(side="left", padx=(0, 8))
+        self.pc_button = ttk.Button(login_row, text="Load from PC", command=self.connect_pc)
+        self.pc_button.pack(side="left", padx=(0, 8))
+        self.refresh_button = ttk.Button(login_row, text="Refresh", command=self.refresh_account)
+        self.refresh_button.pack(side="left", padx=(0, 8))
+        self.disconnect_button = ttk.Button(login_row, text="Disconnect", command=self.disconnect)
+        self.disconnect_button.pack(side="left")
+        ttk.Label(panel, textvariable=self.account_status, foreground=MUTED
+                  ).grid(row=13, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        live_row = ttk.Frame(panel)
+        live_row.grid(row=14, column=0, columnspan=3, sticky="ew")
+        live_row.columnconfigure(0, weight=2)
+        live_row.columnconfigure(1, weight=1)
+        ttk.Label(live_row, text="LIVE title").grid(row=0, column=0, sticky="w")
+        ttk.Label(live_row, text="Game / category").grid(row=0, column=1, sticky="w", padx=(8, 0))
+        ttk.Entry(live_row, textvariable=self.live_title).grid(row=1, column=0, sticky="ew", pady=(4, 8))
+        ttk.Entry(live_row, textvariable=self.live_game).grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(4, 8))
+        ttk.Checkbutton(panel, text="Mature audience", variable=self.live_mature
+                        ).grid(row=15, column=0, sticky="w")
+        live_actions = ttk.Frame(panel)
+        live_actions.grid(row=16, column=0, columnspan=3, sticky="w", pady=(8, 4))
+        self.start_button = ttk.Button(live_actions, text="Start LIVE / Get Key",
+                                       style="Primary.TButton", command=self.start_live)
+        self.start_button.pack(side="left", padx=(0, 8))
+        self.end_button = ttk.Button(live_actions, text="End TikTok LIVE", command=self.end_live)
+        self.end_button.pack(side="left")
+        ttk.Label(panel, foreground=MUTED, wraplength=650,
+                  text="Starting LIVE creates a real TikTok session; it does not start OBS. "
+                       "Only select it when you're ready to stream. Never share your key."
+                  ).grid(row=17, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self._sync_buttons()
         self.server_entry.focus_set()
 
     def build_settings(self, panel):
@@ -135,8 +188,11 @@ class StreamKeyWindow:
         ttk.Label(panel, text="Troubleshooting", font=("Segoe UI", 11, "bold")
                   ).pack(anchor="w")
         ttk.Label(panel, text=(
-            "TikTok must grant your account RTMP access. If your key expires, "
-            "get a fresh URL and key from TikTok, paste both here, and choose Use credentials."
+            "Your TikTok account must have the appropriate LIVE permission. "
+            "Streamlabs Desktop endpoints are not a documented standalone app API, "
+            "so web login or LIVE creation can stop working. "
+            "The app has no updater, does not store tokens on disk, and does not "
+            "require a separate T0G account."
         ), foreground=MUTED, wraplength=540).pack(anchor="w", pady=(6, 0))
 
     def set_status(self, title, detail):
@@ -208,7 +264,154 @@ class StreamKeyWindow:
         self.clear()
         self.settings_status.set("Local credentials cleared. This edition stores no application data on disk.")
 
+    def _sync_buttons(self):
+        waiting = self._busy
+        connected = self._client is not None
+        for button in (self.web_button, self.pc_button):
+            button.state(["disabled"] if waiting else ["!disabled"])
+        self.refresh_button.state(["disabled"] if waiting or not connected else ["!disabled"])
+        self.disconnect_button.state(["disabled"] if waiting or not connected else ["!disabled"])
+        self.start_button.state(
+            ["disabled"] if waiting or not connected or bool(self._stream_id) else ["!disabled"])
+        self.end_button.state(
+            ["disabled"] if waiting or not connected or not self._stream_id else ["!disabled"])
+
+    def _task(self, action, work):
+        if self._busy:
+            return
+        self._busy = True
+        self._sync_buttons()
+
+        def worker():
+            try:
+                result = work()
+                self._events.put((action, result, ""))
+            except (StreamlabsError, ValueError) as error:
+                self._events.put((action, None, str(error)))
+            except Exception:
+                # Do not leak exception bodies that might contain credentials.
+                self._events.put((action, None, "An unexpected Streamlabs error occurred."))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _process_events(self):
+        try:
+            while True:
+                action, data, error = self._events.get_nowait()
+                self._busy = False
+                if error:
+                    if action in ("connect", "refresh", "start", "end"):
+                        if "rejected the session" in error:
+                            if self._client is not None:
+                                self._client.disconnect()
+                            self._client = None
+                            self.account_status.set("Streamlabs: disconnected")
+                    self.set_status("Streamlabs request failed", error)
+                elif action == "connect":
+                    token, account = data
+                    if self._client is not None:
+                        self._client.disconnect()
+                    self._client = StreamlabsTikTok(token)
+                    self._show_account(account)
+                    self.set_status("Streamlabs connected", "Set a title and choose Start LIVE / Get Key.")
+                elif action == "refresh":
+                    self._show_account(data)
+                    self.set_status("Account refreshed", "TikTok LIVE eligibility checked through Streamlabs.")
+                elif action == "start":
+                    self._stream_id = data.stream_id
+                    self.server.set(data.credentials.server)
+                    self.key.set(data.credentials.key)
+                    self.apply()
+                    self.set_status("TikTok LIVE created",
+                                    "RTMP credentials are ready to copy. Start OBS when ready.")
+                elif action == "end":
+                    self._stream_id = ""
+                    self.clear()
+                    self.set_status("TikTok LIVE ended", "The stream key was cleared.")
+                self._sync_buttons()
+        except queue.Empty:
+            pass
+        if self.root.winfo_exists():
+            self.root.after(120, self._process_events)
+
+    def _show_account(self, account):
+        label = "Approved for LIVE" if account.can_go_live else "LIVE access not confirmed"
+        self.account_status.set(
+            f"@{account.username}  |  {label}  |  Status: {account.status}")
+
+    def connect_web(self):
+        self.set_status("Streamlabs login", "Complete the sign-in in your web browser.")
+        def work():
+            token = login_from_web()
+            client = StreamlabsTikTok(token)
+            try:
+                return token, client.get_account()
+            finally:
+                client.disconnect()
+        self._task("connect", work)
+
+    def connect_pc(self):
+        self.set_status("Reading Streamlabs Desktop", "Checking the profile on this PC.")
+        def work():
+            token = load_token_from_pc()
+            client = StreamlabsTikTok(token)
+            try:
+                return token, client.get_account()
+            finally:
+                client.disconnect()
+        self._task("connect", work)
+
+    def refresh_account(self):
+        if self._client is not None:
+            self._task("refresh", self._client.get_account)
+
+    def start_live(self):
+        if self._client is None:
+            self.set_status("Not connected", "Load from Web or PC first.")
+            return
+        if self._stream_id:
+            self.set_status("LIVE already created", "End the previous LIVE session first.")
+            return
+        title = self.live_title.get().strip()
+        game = self.live_game.get().strip()
+        mature = self.live_mature.get()
+        if not title:
+            self.set_status("Title required", "Enter the title for your TikTok LIVE.")
+            return
+        self.set_status("Creating TikTok LIVE", "Requesting an RTMP destination from Streamlabs.")
+        def work():
+            account = self._client.get_account()
+            if not account.can_go_live:
+                raise StreamlabsError("Streamlabs reports that this account cannot go LIVE.")
+            return self._client.start_live(title, game, mature)
+        self._task("start", work)
+
+    def end_live(self):
+        if self._client is None or not self._stream_id:
+            return
+        stream_id = self._stream_id
+        self.set_status("Ending TikTok LIVE", "Requesting end confirmation from Streamlabs.")
+        self._task("end", lambda: self._client.end_live(stream_id))
+
+    def disconnect(self):
+        if self._stream_id:
+            self.set_status("LIVE session active",
+                            "End TikTok LIVE before disconnecting from Streamlabs.")
+            return
+        if self._client is not None:
+            self._client.disconnect()
+            self._client = None
+        self.account_status.set("Streamlabs: disconnected")
+        self.clear()
+        self._sync_buttons()
+
     def close(self):
+        if getattr(self, "_busy", False):
+            messagebox.showwarning("Streamlabs request in progress",
+                                   "Finish the current Streamlabs request before closing.")
+            return
+        if getattr(self, "_client", None) is not None:
+            self._client.disconnect()
         self.clear()
         self.root.destroy()
 
