@@ -1,57 +1,102 @@
 # T0G StreamKey
 
-T0G StreamKey is a standalone Windows utility for copying TikTok RTMP credentials into OBS, T0G Nexus, or another broadcaster. Version 0.1.0 supports manual entry of an RTMP server URL and stream key already issued by TikTok. It opens directly to the credential screen and keeps credentials in memory.
+Standalone Windows 10/11 utility for TikTok RTMP credentials, independent of
+T0G Nexus and T0G Stream Control. The app has **no T0G account sign-in, no
+auto-updater, no backend dependency**, and is distributed manually via GitHub
+Releases or Discord.
 
-## Install and use
+## TikTok / Streamlabs features
 
-- **Installer**. Download `T0G-StreamKey-Setup.exe` from the project's GitHub Releases page or the T0G Discord. Run Setup to install for the current Windows user. The Start menu shortcut is included, and Setup offers a desktop shortcut. Uninstall from **Settings → Apps**.
-- **Portable**. Download `T0G-StreamKey-Portable.exe` from the same sources and run it directly. The bundle unpacks its runtime into a temporary folder while running. It has no persistent application profile. The installed edition also has no persistent profile.
-- **Credentials**. Use the Streamlabs guide link for eligibility information. If your TikTok account has RTMP access, obtain the URL and key through TikTok's authorized interface. Paste both, select **Use credentials**, and copy them individually. To replace an expired pair, paste the new values and select **Use credentials** again.
-- **Privacy**. The app masks the key by default and clears the in-memory fields on exit. Windows clipboard history and clipboard managers can retain copies independently of the app. **Clear saved session** and **Clear local application data** clear in-memory credentials. Browser sign-in is managed in the browser.
+- **Load from Web** opens Streamlabs' browser sign-in (the same Desktop login
+  flow used by the T0G Stream Control OBS plugin). The local callback binds
+  only to 127.0.0.1 and uses a PKCE verifier. No Streamlabs Desktop installation
+  is required for this option.
+- **Load from PC** is optional and explicitly scans the signed-in user's own
+  Streamlabs Desktop LevelDB log for its token, matching Stream Control's
+  Windows loader. No background scanning takes place.
+- **Refresh** reads the TikTok username, application status, and LIVE eligibility
+  from Streamlabs.
+- **Start LIVE / Get Key** calls Streamlabs' TikTok stream-start operation,
+  setting the title, optional game/category, and mature audience flag. This
+  **creates a real TikTok LIVE session**, and if approved, Streamlabs returns
+  an RTMP server and stream key for copying into OBS or other broadcasting
+  software. It does **not** automatically start OBS transmission.
+- **End TikTok LIVE** calls the corresponding API to end the session. It clears
+  the local key fields on successful confirmation.
+- Manual entry and copying of already-authorized RTMP credentials still works
+  without any login or network connection.
 
-TikTok verifies keys when broadcasting. The utility checks only the format. Streamlabs' native TikTok integration can allow going live without granting a transferable RTMP key. [Streamlabs guide](https://support.streamlabs.com/hc/en-us/articles/49480028480667-How-to-Find-Your-TikTok-Stream-Key)
+**Eligibility and compatibility:** A TikTok account must be eligible for LIVE
+access. These Streamlabs Desktop-specific endpoints and their browser login
+are **not a documented, officially supported third-party Streamlabs API**.
+They may change, reject the standalone application, or be subject to provider
+restrictions. Importing the code does not imply Streamlabs/TikTok approval, and
+successful live credential retrieval still requires real-account testing.
+See [Streamlabs' TikTok guide](https://support.streamlabs.com/hc/en-us/articles/49480028480667-How-to-Find-Your-TikTok-Stream-Key).
+
+## Privacy and lifecycle
+
+- Tokens and streaming credentials remain in process memory, not in application
+  settings files, logs, a T0G server, or GitHub. Browser sign-in is managed by
+  Streamlabs and the user's browser.
+- Keys are masked by default. Copying a key puts it on the system clipboard;
+  Windows clipboard history and clipboard managers can independently retain it.
+  Clear credentials removes the clipboard contents only when still owned by
+  StreamKey.
+- Closing the app does **not** end a TikTok LIVE session automatically.
+  Use **End TikTok LIVE** first if you want to stop the session.
+- The app has no automatic update checks or user analytics.
 
 ## Build on Windows
 
-Use Windows 10 or 11 with x64 Python 3.12 (including Tcl/Tk), the Python launcher, and Inno Setup 6. Run from the repository root in PowerShell.
+Install 64-bit Python 3.12 with Tk support and Inno Setup 6. Run:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\packaging\build-windows.ps1
 ```
 
-The script installs the build-only dependency into `.venv`, runs the automated tests, and packages both editions in `dist`. If Inno Setup is installed elsewhere, pass `-InnoCompiler` with the path to `ISCC.exe`. End users receive the bundled runtime.
+This installs the build-only requirements, runs unit tests, generates the icon,
+packages PyInstaller's installer payload and portable EXE, and creates:
 
-Run the application from source and run the tests with Python 3.12 and Tk installed.
+- `dist/T0G-StreamKey-Setup.exe`
+- `dist/T0G-StreamKey-Portable.exe`
+
+To run from source:
 
 ```powershell
+py -3.12 -m pip install -e .
 py -3.12 run_streamkey.py
 py -3.12 -m unittest discover -s tests -v
 ```
 
-## Manual release
+Builds and tests on Windows 10/11, and a real Streamlabs LIVE account, still
+need to be completed before any published release.
 
-1. Confirm the project's license and add the approved `LICENSE` file. Review the notices for the bundled Python and Tcl/Tk distributions and PyInstaller.
-2. Set the intended version in `pyproject.toml`, build both executables, and complete the Windows checklist below on Windows 10 and 11. Sign the files if a signing certificate is available. Recompute SHA-256 hashes after signing.
-3. Create a draft GitHub release for a `v<version>` tag on the tested commit. Attach both executables and their SHA-256 hashes. Describe manual credential entry and Windows architecture support in the release notes.
-4. After release approval, publish on GitHub Releases and share the release or approved executable in the T0G Discord. Users install new versions manually.
+## Source provenance and license
 
-## Streamlabs integration review
+The exact original Stream Control files relevant to TikTok credentials and
+session management are in `reference/t0g-stream-control/`: the OBS C++ TikTok
+service, the OBS Windows credential store, and the legacy Python
+`TokenRetriever.py` / `Stream.py`. The standalone runnable port is in
+`streamkey/streamlabs.py`; original OBS C++ files are **not** built into the
+Windows utility. The original project's GPL-3.0 license text is included in
+`LICENSE.txt` for its copied code. Review all applicable third-party notices
+before distribution.
 
-The Nexus and T0G Stream Control OBS plugins use a Streamlabs Desktop browser sign-in and loopback callback, exchange the code through a Desktop-specific auth API, then call Desktop TikTok account and stream APIs with a bearer token. The stream-start operation creates a TikTok LIVE session and returns `rtmp`, `key`, and a stream ID for the separate end operation. The C++ service also defines a helper for reading tokens from Streamlabs Desktop's local LevelDB. Stream Control's Python tools use the same Desktop API family through a browser callback and HTTP client. [Nexus native service](https://github.com/Bmat9000/T0G-Nexus-2.0/blob/main/obs-plugin/src/tiktok-service.cpp) · [Stream Control auth](https://github.com/Bmat9000/T0G-Stream-Control/blob/main/TokenRetriever.py) · [Stream Control stream service](https://github.com/Bmat9000/T0G-Stream-Control/blob/main/Stream.py)
+## Release
 
-The public Streamlabs developer scopes do not document third-party TikTok key retrieval. Automatic retrieval, refresh, and provider session status require Streamlabs to confirm an approved app registration, authorization flow, credential endpoint, and LIVE session lifecycle. The standalone app reimplements only the generic URL/key handling. Its Python/Tk interface, validator, and OS clipboard run locally. The only browser launch is the user-selected support link, with no credentials attached. [Streamlabs developer scopes](https://dev.streamlabs.com/docs/scopes)
+Run the Windows build and acceptance checklist, test an eligible TikTok
+account, then create a **manual** GitHub release with the two executables and
+SHA-256 hashes. This repository has no auto-update service. End users obtain
+new versions from GitHub or Discord.
 
-## Verification
+## Windows acceptance checklist
 
-Automated tests exercise format validation, redacted credential representation, copy actions, invalidation when editing, key masking, clearing, and shutdown. Window-action tests mock the OS clipboard and Tk widgets.
-
-| Windows acceptance check | Status |
-| --- | --- |
-| Install as a standard user, first launch directly to credentials, Start menu shortcut and optional desktop shortcut | Pending |
-| Paste a sample RTMPS URL/key, apply, show/hide, copy both values to a test editor, replace them, clear, and relaunch | Pending |
-| Clear session and application data, verify unrelated clipboard content survives | Pending |
-| Run portable as a standard user alongside installed edition, verify state isolation, uninstall installed edition | Pending |
-| Disconnect network, launch and use local controls, observe processes and network activity to verify no update checks or background updater | Pending |
-| Streamlabs sign-in, live credential retrieval, automatic refresh, expired sessions and provider rejection | Requires an approved integration and an eligible account |
-
-T0G StreamKey is an independent utility. Streamlabs and TikTok are third-party services.
+- [ ] Run installer, portable edition, and uninstall as a standard user
+- [ ] Verify manual RTMPS URL/key entry, masking, copy, clear, and relaunch
+- [ ] Load from Web on an approved Streamlabs account without installing Desktop
+- [ ] Refresh account and verify username and LIVE permission status
+- [ ] Start LIVE and copy the returned URL/key into OBS
+- [ ] End LIVE and verify TikTok confirms the session ended
+- [ ] Try a rejected/expired login, canceled browser login, and unauthorized account
+- [ ] Verify no token/key written to disk or app logs and no updater is running

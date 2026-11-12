@@ -152,8 +152,9 @@ def login_from_web(timeout: int = 300) -> str:
         data = response.json()
     except (requests.RequestException, ValueError) as exc:
         raise StreamlabsError("Streamlabs token exchange failed or returned invalid data.") from exc
-    token = data.get("data", {}).get("oauth_token") if isinstance(data, dict) else None
-    if not data.get("success") or not isinstance(token, str) or not token:
+    detail = data.get("data") or {} if isinstance(data, dict) else {}
+    token = detail.get("oauth_token") if isinstance(detail, dict) else None
+    if not isinstance(data, dict) or not data.get("success") or not isinstance(token, str) or not token:
         raise StreamlabsError("Streamlabs did not provide a session token.")
     return token
 
