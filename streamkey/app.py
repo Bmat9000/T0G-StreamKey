@@ -83,6 +83,7 @@ class StreamKeyWindow:
         tabs.add(settings, text="Settings")
         self.build_main(main)
         self.build_settings(settings)
+        self._sync_buttons()
         root.after(120, self._process_events)
         self.restore_saved()
 
@@ -145,7 +146,6 @@ class StreamKeyWindow:
         ttk.Label(panel, textvariable=self.detail, foreground=MUTED,
                   wraplength=590).grid(row=10, column=0, columnspan=2,
                                         sticky="w", pady=(6, 0))
-        self._sync_buttons()
 
     def build_settings(self, panel):
         ttk.Label(panel, text="Saved Streamlabs session",
