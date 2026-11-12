@@ -1,6 +1,13 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "t0g-streamkey"
-version = "0.2.0"
+version = "0.3.0"
 description = "Standalone Windows utility for TikTok RTMP credentials"
 requires-python = ">=3.12"
 dependencies = ["requests>=2.32.3,<3"]
+
+[tool.setuptools]
+packages = ["streamkey"]

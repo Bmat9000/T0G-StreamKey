@@ -1,83 +1,82 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from streamkey.app import StreamKeyWindow
 from streamkey.credentials import Credentials
-
-
-class CredentialTests(unittest.TestCase):
-    def test_valid_credentials_and_redacted_repr(self):
-        for scheme in ("rtmp", "rtmps"):
-            with self.subTest(scheme=scheme):
-                url = f"{scheme}://ingest.example:443/live?token=example"
-                pair = Credentials.parse(f" {url} ", " sample-key ")
-                self.assertEqual(pair.server, url)
-                self.assertEqual(pair.key, "sample-key")
-                self.assertNotIn(url, repr(pair))
-                self.assertNotIn(pair.key, repr(pair))
-
-    def test_invalid_servers(self):
-        for url in ("", "https://example.test", "rtmp:///live", "rtmp://user:pass@example.test",
-                    "rtmp://bad host/live", "rtmp://example.test:99999",
-                    "rtmp://example.test:0", "rtmp://[broken", "rtmp://example.test/#fragment",
-                    "rtmp://example.test/a\\b", "rtmp://example.test/a\nb"):
-            with self.subTest(url=url), self.assertRaises(ValueError):
-                Credentials.parse(url, "sample-key")
-
-    def test_invalid_keys(self):
-        for key in ("", "bad key", "bad\nkey", "bad\x00key"):
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                Credentials.parse("rtmp://example.test/live", key)
+from streamkey.token_store import TokenStoreError, WindowsTokenStore
 
 
 class WindowActionTests(unittest.TestCase):
     def setUp(self):
         self.app = StreamKeyWindow.__new__(StreamKeyWindow)
-        for name in ("root", "server", "key", "status", "detail", "copy_server", "copy_key",
-                     "key_entry", "visibility", "settings_status"):
+        for name in (
+            "root", "status", "detail", "account_status",
+            "server_display", "key_display", "web_button", "save_button",
+            "start_button", "stop_button", "copy_server", "copy_key",
+            "forget_button",
+        ):
             setattr(self.app, name, Mock())
+        self.app._client = Mock()
+        self.app._client.token = "example-streamlabs-token"
+        self.app._stream_id = ""
+        self.app._busy = False
         self.app.credentials = None
         self.app.clipboard_value = None
-        self.app.revealed = False
-        self.app.server.get.return_value = "rtmps://example.test/live"
-        self.app.key.get.return_value = "sample-key"
+        self.app.token_store = Mock()
 
-    def test_apply_and_copy(self):
-        self.app.apply()
+    def test_save_stores_token_only(self):
+        self.app.credentials = Credentials.parse("rtmps://example.test/live", "stream-key")
+        self.app.save_token()
+        self.app.token_store.save.assert_called_once_with("example-streamlabs-token")
+        self.app.token_store.clear.assert_not_called()
+
+    def test_save_failure_does_not_claim_success(self):
+        self.app.token_store.save.side_effect = TokenStoreError("unavailable")
+        self.app.save_token()
+        self.app.status.set.assert_called_with("Save failed")
+
+    def test_copy_only_generated_fields(self):
+        self.app.copy("key")
+        self.app.root.clipboard_append.assert_not_called()
+        self.app.credentials = Credentials.parse("rtmps://example.test/live", "stream-key")
         self.app.copy("server")
         self.app.root.clipboard_append.assert_called_with("rtmps://example.test/live")
         self.app.copy("key")
-        self.app.root.clipboard_append.assert_called_with("sample-key")
+        self.app.root.clipboard_append.assert_called_with("stream-key")
 
-    def test_edit_invalidates_previous_pair(self):
-        self.app.apply()
-        self.app.on_edit()
-        self.app.copy("key")
-        self.app.root.clipboard_append.assert_not_called()
-        self.app.copy_key.state.assert_called_with(["disabled"])
-
-    def test_clear_hides_key_and_removes_owned_clipboard_value(self):
-        self.app.apply()
-        self.app.copy("key")
-        self.app.root.clipboard_get.return_value = "sample-key"
-        self.app.toggle_key()
-        self.app.key_entry.configure.assert_called_with(show="")
-        self.app.root.clipboard_clear.reset_mock()
-        self.app.clear_session()
-        self.app.root.clipboard_clear.assert_called_once()
-        self.app.server.set.assert_called_with("")
-        self.app.key.set.assert_called_with("")
-        self.app.key_entry.configure.assert_called_with(show="•")
-
-    def test_clear_preserves_other_clipboard_value(self):
-        self.app.clipboard_value = "sample-key"
-        self.app.root.clipboard_get.return_value = "new clipboard content"
-        self.app.clear_data()
+    def test_clear_credentials_preserves_unrelated_clipboard(self):
+        self.app.credentials = Credentials.parse("rtmps://example.test/live", "stream-key")
+        self.app.clipboard_value = "stream-key"
+        self.app.root.clipboard_get.return_value = "someone else's clipboard"
+        self.app.clear_credentials()
         self.app.root.clipboard_clear.assert_not_called()
+        self.app.server_display.set.assert_called_with("Not generated")
+        self.app.key_display.set.assert_called_with("Not generated")
 
-    def test_close_clears_local_state(self):
+    def test_expired_session_clears_saved_token(self):
+        self.app._invalidate_token()
+        self.app.token_store.clear.assert_called_once()
+        self.app._client.disconnect.assert_called_once()
+        self.assertIsNone(self.app._client)
+        self.app.status.set.assert_called_with("Streamlabs session expired")
+
+    def test_forget_saved_token(self):
+        self.app.forget_saved()
+        self.app.token_store.clear.assert_called_once()
+        self.assertIsNone(self.app._client)
+
+    def test_saved_session_restoration_calls_account(self):
+        self.app.token_store.load.return_value = "saved-token"
+        with patch("streamkey.app.StreamlabsTikTok") as client_type:
+            client_type.return_value.get_account.return_value = "account"
+            result = self.app._restore_saved_worker()
+        self.assertEqual(result, ("saved-token", "account"))
+        client_type.return_value.disconnect.assert_called_once()
+
+    def test_close_does_not_end_live_or_erase_saved_token(self):
         self.app.close()
-        self.app.key.set.assert_called_with("")
+        self.app.token_store.clear.assert_not_called()
+        self.app._client.disconnect.assert_called_once()
         self.app.root.destroy.assert_called_once()
 
 

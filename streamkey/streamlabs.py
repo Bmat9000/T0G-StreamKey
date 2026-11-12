@@ -168,6 +168,10 @@ class StreamlabsTikTok:
         self._token = token.strip()
         self._session = session if session is not None else requests.Session()
 
+    @property
+    def token(self) -> str:
+        return self._token
+
     def disconnect(self):
         self._token = ""
         self._session.close()
