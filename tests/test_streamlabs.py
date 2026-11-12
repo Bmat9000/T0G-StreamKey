@@ -51,7 +51,8 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(live.credentials.key, "super-secret")
         self.assertEqual(live.stream_id, "321")
         self.assertNotIn("super-secret", repr(live))
-        _, args, kwargs = self.transport.request.mock_calls[-1]
+        args = self.transport.request.call_args.args
+        kwargs = self.transport.request.call_args.kwargs
         self.assertEqual(args[:2], ("POST", "https://streamlabs.com/api/v5/slobs/tiktok/stream/start"))
         self.assertIn(("audience_type", (None, "0")), kwargs["files"])
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer test-only-token")
