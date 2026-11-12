@@ -2,7 +2,7 @@ name: Unit tests
 
 on:
   push:
-    branches: [main, feature/streamlabs-credential-import]
+    branches: [main, 'feature/**']
   pull_request:
 
 jobs:

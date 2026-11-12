@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 from streamkey.app import StreamKeyWindow
 from streamkey.credentials import Credentials
+from streamkey.streamlabs import TikTokCategory
 from streamkey.token_store import TokenStoreError, WindowsTokenStore
 
 
@@ -13,7 +14,9 @@ class WindowActionTests(unittest.TestCase):
             "root", "status", "detail", "account_status",
             "server_display", "key_display", "web_button", "save_button",
             "start_button", "stop_button", "copy_server", "copy_key",
-            "forget_button",
+            "forget_button", "title_entry", "category_entry",
+            "audience_dropdown", "category_list", "category_hint",
+            "live_title", "live_game", "live_audience",
         ):
             setattr(self.app, name, Mock())
         self.app._client = Mock()
@@ -23,6 +26,16 @@ class WindowActionTests(unittest.TestCase):
         self.app.credentials = None
         self.app.clipboard_value = None
         self.app.token_store = Mock()
+        self.app.live_title.get.return_value = "My LIVE"
+        self.app.live_game.get.return_value = "Rust"
+        self.app.live_audience.get.return_value = "Everyone"
+        self.app._selected_category = TikTokCategory("Rust", "rust-id")
+        self.app._category_generation = 0
+        self.app._category_after = None
+        self.app._category_candidates = []
+        self.app._setting_category = False
+        self.app._events = Mock()
+        self.app._client.get_account.return_value.can_go_live = True
 
     def test_save_stores_token_only(self):
         self.app.credentials = Credentials.parse("rtmps://example.test/live", "stream-key")
@@ -73,6 +86,56 @@ class WindowActionTests(unittest.TestCase):
             result = self.app._restore_saved_worker()
         self.assertEqual(result, ("saved-token", "account"))
         client_type.return_value.disconnect.assert_called_once()
+
+    def test_start_sends_title_selected_game_and_everyone(self):
+        self.app._task = Mock()
+        self.app.start_live()
+        action, work = self.app._task.call_args.args
+        self.assertEqual(action, "start")
+        work()
+        self.app._client.start_live.assert_called_once_with(
+            "My LIVE", "Rust", False, category_id="rust-id")
+
+    def test_start_sends_18_plus_as_mature(self):
+        self.app._task = Mock()
+        self.app.live_audience.get.return_value = "18+"
+        self.app.start_live()
+        self.app._task.call_args.args[1]()
+        self.app._client.start_live.assert_called_once_with(
+            "My LIVE", "Rust", True, category_id="rust-id")
+
+    def test_start_requires_title_and_selected_game(self):
+        self.app._task = Mock()
+        self.app.live_title.get.return_value = " "
+        self.app.start_live()
+        self.app.status.set.assert_called_with("LIVE title required")
+        self.app._task.assert_not_called()
+        self.app.live_title.get.return_value = "My LIVE"
+        self.app._selected_category = None
+        self.app.start_live()
+        self.app.status.set.assert_called_with("Select a game")
+        self.app._task.assert_not_called()
+
+    def test_editing_game_invalidates_selection_and_schedules_search(self):
+        self.app._selected_category = TikTokCategory("Rust", "rust-id")
+        self.app.live_game.get.return_value = "Rain"
+        self.app._category_changed()
+        self.assertIsNone(self.app._selected_category)
+        self.app.root.after.assert_called_once()
+        self.assertEqual(self.app.root.after.call_args.args[0], 300)
+
+    def test_stale_search_does_not_update_picker(self):
+        self.app._category_generation = 3
+        self.app._receive_categories(
+            (2, "Rust", self.app._client, [TikTokCategory("Rust", "id")]), None)
+        self.app.category_list.insert.assert_not_called()
+
+    def test_current_search_displays_suggestions(self):
+        self.app._category_generation = 3
+        self.app._receive_categories(
+            (3, "Rust", self.app._client, [TikTokCategory("Rust", "id")]), None)
+        self.app.category_list.insert.assert_called_once()
+        self.app.category_list.grid.assert_called_once()
 
     def test_close_does_not_end_live_or_erase_saved_token(self):
         self.app.close()

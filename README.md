@@ -11,12 +11,18 @@ no automatic updates, and remains separate from T0G Nexus and T0G Stream Control
 - **Save**: securely save **only the current Streamlabs authentication token**
   in **Windows Credential Manager** for this Windows user. It does **not** save
   the RTMP URL, stream key, or your Streamlabs password. Saving is opt-in.
-- **Start**: use the connected or restored Streamlabs token to request a TikTok
-  LIVE session. If Streamlabs approves it, the app displays the RTMP URL and
-  a masked stream key, with **Copy URL** and **Copy Key** buttons. Starting
-  creates an actual TikTok LIVE session; it does not automatically transmit from
-  OBS. Because the requested UI has no input fields, the title sent to
-  Streamlabs is the fixed default "TikTok LIVE" (no game/category or mature flag).
+- **LIVE title**: type the name of your stream before starting.
+- **Game / category**: type at least two letters to search Streamlabs' TikTok
+  category list. Matching games appear in a selectable dropdown; choose the
+  correct game (or **Other**). StreamKey sends the selected category ID to
+  Streamlabs rather than guessing from the input text.
+- **Audience**: choose **Everyone** or **18+**. These map to Streamlabs'
+  existing `audience_type` values `0` and `1`.
+- **Start**: use the connected or restored Streamlabs token, title, selected
+  category, and audience to request a TikTok LIVE session. If approved, the app
+  displays the RTMP URL and a masked stream key with **Copy URL** and **Copy
+  Key** buttons. Starting creates an actual TikTok LIVE session; it does not
+  automatically transmit from OBS.
 - **Stop**: ask Streamlabs to end the TikTok LIVE session and clear generated
   credentials only after receiving a successful response.
 - **Need Help?**: display steps and open the Streamlabs TikTok support guide.
@@ -32,7 +38,9 @@ issues) **do not silently erase your saved token**. If a start request repeatedl
 fails to return valid credentials, reauthenticate using Load from Web, then
 press Save to replace the old token.
 
-The two credentials are shown in read-only displays, not editable input fields.
+The RTMP URL and stream key are shown in read-only displays, not editable
+input fields. The only editable text fields are for LIVE title and searching
+the TikTok game/category list.
 No RTMP credentials are saved by the Save button; they are cleared when Stop
 succeeds or StreamKey exits. The clipboard may temporarily hold copied data,
 including through Windows clipboard history.
@@ -97,6 +105,8 @@ notices prior to distribution.
 - [ ] Verify network failures do not delete saved tokens
 - [ ] Start and confirm generated RTMP URL/key copy into OBS
 - [ ] Stop and verify the TikTok LIVE session actually ends
-- [ ] Verify read-only credential displays, no inputs, and Copy buttons
+- [ ] Verify title input, live game suggestions, Everyone/18+ mapping, and
+      category selection are sent to Streamlabs
+- [ ] Verify read-only URL and stream-key displays and Copy buttons
 - [ ] Verify no secrets in logs, application settings, or build artifacts
 - [ ] Build and install setup/portable editions on supported Windows versions

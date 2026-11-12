@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from streamkey.streamlabs import (
-    AccountInfo, SessionRejected, StreamlabsError, StreamlabsTikTok,
+    AccountInfo, SessionRejected, StreamlabsError, StreamlabsTikTok, TikTokCategory,
     _pkce, load_token_from_pc,
 )
 
@@ -44,6 +44,42 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.client.resolve_category("rust"), "123")
         self.assertEqual(self.client.resolve_category("Unknown"), "123")
         self.assertEqual(self.client.resolve_category(""), "")
+
+    def test_search_categories_returns_names_and_ids_for_picker(self):
+        self.response({
+            "categories": [
+                {"full_name": "Rust", "game_mask_id": "rust-id"},
+                {"full_name": "Rust", "game_mask_id": "duplicate-id"},
+                {"full_name": "Rainbow Six Siege", "game_mask_id": 456},
+            ],
+        })
+        choices = self.client.search_categories("Rainbow Six Siege search longer than limit")
+        self.assertEqual(choices, [
+            TikTokCategory("Rust", "rust-id"),
+            TikTokCategory("Rainbow Six Siege", "456"),
+            TikTokCategory("Other", ""),
+        ])
+        self.assertEqual(len(self.transport.request.call_args.kwargs["params"]["category"]), 25)
+
+    def test_start_live_uses_selected_category_and_18_plus(self):
+        self.response({"id": 9, "rtmp": "rtmps://ingest.example/live", "key": "example-key"})
+        live = self.client.start_live("My LIVE", "Rust", True, category_id="rust-id")
+        self.assertEqual(live.stream_id, "9")
+        self.assertEqual(self.transport.request.call_count, 1)
+        args = self.transport.request.call_args.args
+        options = self.transport.request.call_args.kwargs["files"]
+        self.assertEqual(args[0], "POST")
+        self.assertIn(("title", (None, "My LIVE")), options)
+        self.assertIn(("category", (None, "rust-id")), options)
+        self.assertIn(("audience_type", (None, "1")), options)
+
+    def test_start_live_accepts_other_category_and_everyone(self):
+        self.response({"id": 10, "rtmp": "rtmp://example.test/live", "key": "example-key"})
+        self.client.start_live("Another LIVE", "Other", False, category_id="")
+        self.assertIn(("category", (None, "")),
+                      self.transport.request.call_args.kwargs["files"])
+        self.assertIn(("audience_type", (None, "0")),
+                      self.transport.request.call_args.kwargs["files"])
 
     def test_start_live_returns_key_without_exposing_it_in_repr(self):
         self.response({"id": 321, "rtmp": "rtmps://ingest.example/live", "key": "super-secret"})
