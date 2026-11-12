@@ -77,9 +77,10 @@ py -3.12 run_streamkey.py
 py -3.12 -m unittest discover -s tests -v
 ```
 
-The GitHub Actions tests use mocked Streamlabs APIs, and do not create a real
-LIVE stream. Manual Windows acceptance testing and a user-approved TikTok LIVE
-account are necessary before release.
+Run the unit tests manually using the command above; the tests use mocked
+Streamlabs APIs and do not create a real LIVE stream. This repository has no
+GitHub Actions automation. Manual Windows acceptance testing and an eligible
+TikTok LIVE account are necessary before release.
 
 ## Privacy / behavior
 
