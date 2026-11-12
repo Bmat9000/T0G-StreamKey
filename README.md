@@ -25,7 +25,9 @@ no automatic updates, and remains separate from T0G Nexus and T0G Stream Control
   automatically transmit from OBS.
 - **Stop**: ask Streamlabs to end the TikTok LIVE session and clear generated
   credentials only after receiving a successful response.
-- **Need Help?**: display steps and open the Streamlabs TikTok support guide.
+- **Need Help?**: a tab immediately next to **Settings** that opens help
+  instructions and the Streamlabs TikTok support guide, then returns to
+  whichever app tab was open.
 - **Settings → Forget saved Streamlabs token**: delete the saved login and
   disconnect without uninstalling the app.
 
