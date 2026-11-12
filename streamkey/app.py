@@ -87,10 +87,16 @@ class StreamKeyWindow:
         tabs.pack(fill="both", expand=True, padx=24, pady=(0, 18))
         main = ttk.Frame(tabs, padding=20)
         settings = ttk.Frame(tabs, padding=20)
+        help_tab = ttk.Frame(tabs, padding=20)
         tabs.add(main, text="StreamKey")
         tabs.add(settings, text="Settings")
+        tabs.add(help_tab, text="Need Help?")
+        self.tabs = tabs
+        self.help_tab = help_tab
+        self.last_content_tab = str(main)
         self.build_main(main)
         self.build_settings(settings)
+        tabs.bind("<<NotebookTabChanged>>", self._on_tab_changed)
         self.live_game.trace_add("write", self._category_changed)
         self._sync_buttons()
         root.after(120, self._process_events)
@@ -116,8 +122,6 @@ class StreamKeyWindow:
         self.web_button.pack(side="left", padx=(0, 8))
         self.save_button = ttk.Button(top, text="Save", command=self.save_token)
         self.save_button.pack(side="left", padx=(0, 8))
-        ttk.Button(top, text="Need Help?", command=self.need_help).pack(side="left")
-
         live = ttk.Frame(panel)
         live.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 16))
         live.columnconfigure(0, weight=1)
@@ -548,6 +552,15 @@ class StreamKeyWindow:
         self.clear_credentials()
         self._sync_buttons()
         self.set_status("Saved token forgotten", "Use Load from Web again to sign in.")
+
+    def _on_tab_changed(self, _event=None):
+        selected = self.tabs.select()
+        if selected == str(self.help_tab):
+            # Need Help? behaves as an action next to Settings, not a blank page.
+            self.tabs.select(self.last_content_tab)
+            self.root.after(0, self.need_help)
+        else:
+            self.last_content_tab = selected
 
     def need_help(self):
         messagebox.showinfo(
