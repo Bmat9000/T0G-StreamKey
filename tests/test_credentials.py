@@ -137,6 +137,29 @@ class WindowActionTests(unittest.TestCase):
         self.app.category_list.insert.assert_called_once()
         self.app.category_list.grid.assert_called_once()
 
+    def test_help_tab_returns_to_last_page_and_opens_help(self):
+        self.app.tabs = Mock()
+        self.app.help_tab = "help"
+        self.app.last_content_tab = "settings"
+        self.app.tabs.select.return_value = "help"
+        self.app.need_help = Mock()
+
+        self.app._on_tab_changed()
+
+        self.app.tabs.select.assert_called_with("settings")
+        self.app.root.after.assert_called_once_with(0, self.app.need_help)
+
+    def test_other_tabs_track_last_open_page(self):
+        self.app.tabs = Mock()
+        self.app.help_tab = "help"
+        self.app.last_content_tab = "main"
+        self.app.tabs.select.return_value = "settings"
+
+        self.app._on_tab_changed()
+
+        self.assertEqual(self.app.last_content_tab, "settings")
+        self.app.root.after.assert_not_called()
+
     def test_close_does_not_end_live_or_erase_saved_token(self):
         self.app.close()
         self.app.token_store.clear.assert_not_called()
